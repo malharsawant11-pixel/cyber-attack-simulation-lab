@@ -50,12 +50,14 @@ def save_recon_report(results, report_dir="reports"):
 
     return report_path
 
+
 def save_consolidated_report(
     auth_findings,
     recon_results,
     report_dir="reports",
+    attack_mappings=None,
 ):
-    """Save authentication and reconnaissance findings together."""
+    """Save authentication, reconnaissance and ATT&CK findings together."""
     import json
     from datetime import datetime, timezone
     from pathlib import Path
@@ -63,17 +65,25 @@ def save_consolidated_report(
     output_dir = Path(report_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if attack_mappings is None:
+        attack_mappings = []
+
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "report_type": "CONSOLIDATED_SECURITY_INVESTIGATION",
         "authentication_findings": auth_findings,
         "reconnaissance_results": recon_results,
+        "mitre_attack_mappings": attack_mappings,
         "summary": {
             "total_authentication_findings": len(auth_findings),
             "ports_checked": len(recon_results),
             "open_ports": sum(
                 result.get("state") == "open"
                 for result in recon_results
+            ),
+            "mapped_attack_techniques": sum(
+                mapping.get("mapped", False)
+                for mapping in attack_mappings
             ),
         },
     }
@@ -85,3 +95,4 @@ def save_consolidated_report(
     )
 
     return report_path
+

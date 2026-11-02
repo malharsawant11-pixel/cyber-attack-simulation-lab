@@ -7,6 +7,9 @@ import csv
 import io
 from datetime import datetime, timezone
 from modules.recon import scan_local_target
+from modules.nmap_scanner import run_nmap_scan
+from modules.attack_mapping import map_all_findings
+from modules.pdf_generator import generate_incident_pdf
 
 from modules.reporting import (
     save_auth_report,
@@ -234,6 +237,89 @@ st.divider()
 st.divider()
 st.header("Security Findings Summary")
 
+
+st.divider()
+st.subheader("MITRE ATT&CK Mapping")
+
+auth_findings = st.session_state.get("auth_findings", [])
+
+attack_mappings = map_all_findings(auth_findings)
+
+if attack_mappings:
+    attack_df = pd.DataFrame(attack_mappings)
+
+    st.dataframe(
+        attack_df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    for mapping in attack_mappings:
+        if mapping.get("mapped"):
+            st.markdown(
+                f"**{mapping['technique_id']} — "
+                f"{mapping['technique_name']}**"
+            )
+            st.write(f"Tactic: {mapping['tactic']}")
+            st.write(
+                f"Description: {mapping['description']}"
+            )
+            st.info(
+                f"Recommendation: {mapping['recommendation']}"
+            )
+else:
+    st.info(
+        "Run the authentication simulation to generate "
+        "findings for ATT&CK mapping."
+    )
+
+
+st.divider()
+st.subheader("Nmap Network Scanner")
+
+st.caption(
+    "Authorized localhost scanning only. "
+    "Uses Nmap service detection on five allowlisted TCP ports."
+)
+
+if st.button("Run Nmap Scan"):
+    try:
+        nmap_results = run_nmap_scan("127.0.0.1")
+        st.session_state["nmap_results"] = nmap_results
+        st.success("Nmap scan completed successfully.")
+    except (RuntimeError, ValueError) as error:
+        st.error(f"Nmap scan failed: {error}")
+
+nmap_results = st.session_state.get("nmap_results", [])
+
+if nmap_results:
+    nmap_df = pd.DataFrame(nmap_results)
+
+    st.dataframe(
+        nmap_df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    nmap_open = sum(
+        item["state"] == "open"
+        for item in nmap_results
+    )
+
+    st.metric("Nmap Open Ports", nmap_open)
+
+    st.download_button(
+        "Download Nmap Results",
+        data=__import__("json").dumps(
+            nmap_results, indent=2
+        ),
+        file_name="nmap_scan_results.json",
+        mime="application/json",
+    )
+else:
+    st.info("No Nmap scan performed yet.")
+
+
 severity_counts = {
     "HIGH": 0,
     "MEDIUM": 0,
@@ -304,10 +390,14 @@ if st.button("Generate Consolidated Report"):
     auth_findings = st.session_state.get("auth_findings", [])
     recon_results = st.session_state.get("recon_results", [])
 
-    report_path = save_consolidated_report(
-        auth_findings,
-        recon_results,
-    )
+    attack_mappings = map_all_findings(auth_findings)
+
+report_path = save_consolidated_report(
+    auth_findings,
+    recon_results,
+    attack_mappings=attack_mappings,
+)
+
 
     import json
     with open(report_path, "r", encoding="utf-8") as report_file:
@@ -321,6 +411,35 @@ if st.button("Generate Consolidated Report"):
         file_name="consolidated_incident_report.json",
         mime="application/json",
     )
+
+
+st.divider()
+st.subheader("PDF Incident Report")
+
+if st.button("Generate PDF Incident Report"):
+    auth_findings = st.session_state.get("auth_findings", [])
+    recon_results = st.session_state.get("recon_results", [])
+
+    attack_mappings = map_all_findings(auth_findings)
+
+    pdf_path = generate_incident_pdf(
+        auth_findings,
+        recon_results,
+        attack_mappings,
+    )
+
+    with open(pdf_path, "rb") as pdf_file:
+        pdf_data = pdf_file.read()
+
+    st.success("PDF incident report generated successfully!")
+
+    st.download_button(
+        "Download PDF Incident Report",
+        data=pdf_data,
+        file_name="cybersecurity_incident_report.pdf",
+        mime="application/pdf",
+    )
+
 
 st.subheader("Simulation Evidence")
 
